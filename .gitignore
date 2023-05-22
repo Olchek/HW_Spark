@@ -6,3 +6,4 @@
 .bloop
 project
 target
+*.DS_Store

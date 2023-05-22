@@ -1,7 +1,8 @@
 package org.apache.spark.ml.made
+import breeze.linalg.*
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.linalg.{DenseVector, Vector, VectorUDT, Vectors}
-import org.apache.spark.ml.param.{ParamMap, DoubleParam, IntParam}
+import org.apache.spark.ml.param.{DoubleParam, IntParam, ParamMap}
 import org.apache.spark.ml.param.shared.{HasFeaturesCol, HasLabelCol, HasOutputCol}
 import org.apache.spark.ml.util._
 import org.apache.spark.ml.{Estimator, Model}
@@ -18,15 +19,19 @@ trait LinearRegressionParams extends HasFeaturesCol with HasLabelCol with HasOut
 
   val numIterations = new IntParam(this, "numIterations", "Number of iterations")
   val learningRate = new DoubleParam(this, "learningRate", "Learning rate")
+  val batchSize = new IntParam(this, "batchSize", "batch size")
 
   def setNumIters(value: Int): this.type = set(numIterations, value)
   def getNumIters: Int = $(numIterations)
+  def getBatchSize: Int=  $(batchSize)
 
   def setLearningRate(value: Double): this.type = set(learningRate, value)
   def getLearningRate: Double = $(learningRate)
+  def setBathSize: Int = $(batchSize)
 
   setDefault(numIterations -> 1000)
   setDefault(learningRate -> 0.01)
+  setDefault(batchSize -> 8)
 
   protected def validateAndTransformSchema(schema: StructType): StructType = {
     SchemaUtils.checkColumnType(schema, getFeaturesCol, new VectorUDT())
@@ -66,11 +71,12 @@ with DefaultParamsWritable {
     var weights = Vectors.zeros(dim).asBreeze.toDenseVector
 
     for (i <- 0 until $(numIterations)) {
-      lrData.grouped(1).foreach { data =>
+      lrData.grouped($(batchSize)).foreach { data =>
         val grad = data.foldLeft(Vectors.zeros(dim).asBreeze.toDenseVector) {
           case (sumGrad, (features, label)) =>
             val x = features.asBreeze
-            sumGrad + ((x dot weights) - label) * x
+            val result = ((x dot weights) - label) * x
+            sumGrad + breeze.linalg.mean(result, breeze.linalg.Axis._0)
         }
         weights -= getLearningRate * grad
       }
